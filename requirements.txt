@@ -3,3 +3,5 @@ faster-whisper
 pyaudio
 pynput
 numpy
+nuitka
+pyperclip
