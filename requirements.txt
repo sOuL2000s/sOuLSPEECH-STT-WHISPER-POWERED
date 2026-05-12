@@ -5,3 +5,4 @@ pynput
 numpy
 nuitka
 pyperclip
+Pillow
