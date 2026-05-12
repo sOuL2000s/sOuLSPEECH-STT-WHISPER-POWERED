@@ -1,0 +1,41 @@
+# Python specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Editor/IDE specific
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Build artifacts (Nuitka / PyInstaller)
+build/
+dist/
+*.exe
+*.bin
+*.spec
+*.onefile-build/
+*.nuitka/
+*.build/
+
+# Temporary / Log files
+*.log
+*.temp
+*.wav # Temporary audio recording file
+
+# Model files (Often large, downloaded manually or via LFS)
+# Uncomment the line below if you don't want to commit the model_files directory
+# model_files/
+
+# Operating System files
+.DS_Store
+Thumbs.db
+combined_project_files.txt
