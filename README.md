@@ -151,13 +151,7 @@ A small, frameless widget window named "sOuLSPEECH" should appear on your screen
 2.  **Run the PyInstaller Build Command:**
     Navigate to your project's root directory in the terminal (with the virtual environment activated).
     ```powershell
-    pyinstaller --name "sOuLSPEECH" --onefile --windowed --icon="icon.ico" `
-    --add-data "model_files;model_files" `
-    --add-data "icon.png;." `
-    --add-data "icon.ico;." `
-    app.py
-    ```
-    *(Note: Using `` ` `` for line continuation in PowerShell. For Windows CMD, use `^`)*
+    pyinstaller --name "sOuLSPEECH" --onefile --windowed --icon="icon.png" --add-data "model_files;model_files" --add-data "icon.png;." app.py
 
 3.  **Locate the Executable:**
     After a successful build (which may take several minutes depending on your system and model size), your `sOuLSPEECH.exe` will be found in the `dist` directory.
@@ -171,17 +165,10 @@ A small, frameless widget window named "sOuLSPEECH" should appear on your screen
 
 2.  **Run the Nuitka Build Command:**
     ```powershell
-    python -m nuitka --standalone --onefile --windows-disable-console --output-filename="sOuLSPEECH" ^
-    --include-data-dir=model_files=model_files ^
-    --include-data-file=icon.png=icon.png ^
-    --include-data-file=icon.ico=icon.ico ^
-    --windows-icon-template=icon.ico ^
-    --plugin-enable=tk-inter ^
-    app.py
+    python -m nuitka --standalone --onefile --windows-disable-console --output-filename="sOuLSPEECH" --include-data-dir=model_files=model_files --include-data-file=icon.png=icon.png --windows-icon-template=icon.png --plugin-enable=tk-inter app.py
     ```
-    *(Note: Using `^` for line continuation in Windows CMD/PowerShell for Nuitka command)*
-    *   `--output-filename="sOuLSPEECH"`: Sets the name of the output `.exe`.
-    *   `--windows-icon-template=icon.ico`: Sets the icon of the `.exe` file.
+    *   `--output-filename="sOuLSPEECH(v3)"`: Sets the name of the output `.exe`.
+    *   `--windows-icon-template=icon.png`: Sets the icon of the `.exe` file.
 
 3.  **Locate the Executable:**
     After a successful build (which can take significantly longer than PyInstaller, but often results in a faster `.exe`), your `sOuLSPEECH.exe` will be found in the current directory or a `build` subdirectory.
