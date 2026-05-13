@@ -5,6 +5,9 @@ import wave
 import pyaudio
 import json
 import subprocess
+import math
+import struct
+import tkinter as tk
 import customtkinter as ctk
 from PIL import Image
 # To fix DLL loading issues in PyInstaller for PyAV (av)
@@ -37,19 +40,29 @@ class AppConfig:
     RATE = 16000
 
     # UI colors
-    PRIMARY_BG = "#121212"
-    TITLE_BAR_BG = "#1f1f1f"
-    TEXT_AREA_BG = "#1e1e1e"
+    PRIMARY_BG = ("#f0f0f0", "#121212")
+    TITLE_BAR_BG = ("#e0e0e0", "#1f1f1f")
+    TEXT_AREA_BG = ("#ffffff", "#1e1e1e")
     SECONDARY_BG = "#34495e"
-    BORDER_COLOR = "#333333"
-    ACCENT_COLOR = "#3498db"
-    ACCENT_HOVER = "#2980b9"
+    BORDER_COLOR = ("#cccccc", "#333333")
+    
+    # Accent Color Presets
+    ACCENT_PRESETS = {
+        "Blue": {"main": "#3498db", "hover": "#2980b9"},
+        "Green": {"main": "#2ecc71", "hover": "#27ae60"},
+        "Orange": {"main": "#e67e22", "hover": "#d35400"},
+        "Purple": {"main": "#9b59b6", "hover": "#8e44ad"},
+    }
+    
+    DEFAULT_ACCENT = "Blue"
     RECORD_BTN_COLOR = "#2ecc71"
     RECORD_BTN_HOVER = "#27ae60"
     STOP_BTN_COLOR = "#e74c3c"
     STOP_BTN_HOVER = "#c0392b"
-    PROGRESS_BG = "#2c2c2c"
+    PROGRESS_BG = ("#d0d0d0", "#2c2c2c")
     UI_GRAY = "#555555"
+    UI_GRAY_HOVER = "#666666"
+    SECONDARY_HOVER = "#2c3e50"
     
     # Text colors
     TEXT_COLOR_SECONDARY = "#888888"
@@ -110,6 +123,7 @@ class SpeechWidget(ctk.CTk):
         # --- Variables & Config ---
         self.is_recording = False
         self.is_minimized = False
+        self.is_transcribing_live = False
         self.keyboard = keyboard.Controller()
         self.hotkey_listener = None
         self.audio_frames = []
@@ -123,8 +137,8 @@ class SpeechWidget(ctk.CTk):
         self.geometry(self.last_expanded_geo)
 
         self.overrideredirect(True)      
-        self.attributes("-topmost", True) 
-        self.attributes("-alpha", 0.95)   
+        self.attributes("-topmost", self.always_on_top) 
+        self.attributes("-alpha", self.window_opacity)   
         self.configure(fg_color=AppConfig.PRIMARY_BG)
 
         # Load Icon for minimized button
@@ -144,6 +158,7 @@ class SpeechWidget(ctk.CTk):
         # Load Model Offline (Threaded)
         self.model = None
         
+        self.tooltip_window = None
         self.setup_ui()
         self.setup_bindings()
         
@@ -163,6 +178,12 @@ class SpeechWidget(ctk.CTk):
                     self.whisper_language = config.get('whisper_language', None)
                     self.global_hotkey = config.get('global_hotkey', "<ctrl>+<alt>+s")
                     self.hotkey_enabled = config.get('hotkey_enabled', True)
+                    self.auto_copy = config.get('auto_copy', False)
+                    self.auto_type = config.get('auto_type', False)
+                    self.window_opacity = config.get('window_opacity', 0.95)
+                    self.always_on_top = config.get('always_on_top', True)
+                    self.appearance_mode = config.get('appearance_mode', "Dark")
+                    self.accent_color_name = config.get('accent_color', AppConfig.DEFAULT_ACCENT)
             else:
                 raise FileNotFoundError
         except Exception:
@@ -173,6 +194,18 @@ class SpeechWidget(ctk.CTk):
             self.whisper_language = None
             self.global_hotkey = "<ctrl>+<alt>+s"
             self.hotkey_enabled = True
+            self.auto_copy = False
+            self.auto_type = False
+            self.window_opacity = 0.95
+            self.always_on_top = True
+            self.appearance_mode = "Dark"
+            self.accent_color_name = AppConfig.DEFAULT_ACCENT
+
+        # Apply theme and resolve current accent colors
+        preset = AppConfig.ACCENT_PRESETS.get(self.accent_color_name, AppConfig.ACCENT_PRESETS[AppConfig.DEFAULT_ACCENT])
+        self.accent_color = preset["main"]
+        self.accent_hover = preset["hover"]
+        ctk.set_appearance_mode(self.appearance_mode)
 
     def save_config(self):
         current_geo = self.geometry()
@@ -185,7 +218,13 @@ class SpeechWidget(ctk.CTk):
             'whisper_compute_type': self.whisper_compute_type,
             'whisper_language': self.whisper_language,
             'global_hotkey': self.global_hotkey,
-            'hotkey_enabled': self.hotkey_enabled
+            'hotkey_enabled': self.hotkey_enabled,
+            'auto_copy': self.auto_copy,
+            'auto_type': self.auto_type,
+            'window_opacity': self.window_opacity,
+            'always_on_top': self.always_on_top,
+            'appearance_mode': self.appearance_mode,
+            'accent_color': self.accent_color_name
         }
         try:
             with open(self.config_file, 'w') as f:
@@ -211,34 +250,45 @@ class SpeechWidget(ctk.CTk):
         title_bar = ctk.CTkFrame(self, fg_color=AppConfig.TITLE_BAR_BG, height=35, corner_radius=0)
         title_bar.pack(fill="x", side="top")
         
-        title_label = ctk.CTkLabel(title_bar, text="sOuLSPEECH", font=(AppConfig.FONT_FAMILY, AppConfig.TITLE_FONT_SIZE, "bold"), text_color=AppConfig.ACCENT_COLOR)
+        title_label = ctk.CTkLabel(title_bar, text="sOuLSPEECH", font=(AppConfig.FONT_FAMILY, AppConfig.TITLE_FONT_SIZE, "bold"), text_color=self.accent_color)
         title_label.pack(side="left", padx=10)
 
-        close_btn = ctk.CTkButton(title_bar, text="✕", width=30, height=30, fg_color="transparent", 
-                                  hover_color=AppConfig.STOP_BTN_COLOR, command=self.quit)
-        close_btn.pack(side="right", padx=2)
+        close_btn = ctk.CTkButton(title_bar, text="✕", width=35, height=35, fg_color="transparent", 
+                                  hover_color=AppConfig.STOP_BTN_COLOR, corner_radius=0, command=self.quit)
+        close_btn.pack(side="right")
 
-        settings_btn = ctk.CTkButton(title_bar, text="⚙", width=30, height=30, fg_color="transparent", 
-                                     hover_color=AppConfig.SECONDARY_BG, command=self.open_settings)
-        settings_btn.pack(side="right", padx=2)
+        settings_btn = ctk.CTkButton(title_bar, text="⚙", width=35, height=35, fg_color="transparent", 
+                                     hover_color=AppConfig.SECONDARY_BG, corner_radius=0, command=self.open_settings)
+        settings_btn.pack(side="right")
 
-        min_btn = ctk.CTkButton(title_bar, text="—", width=30, height=30, fg_color="transparent", 
-                                hover_color=AppConfig.SECONDARY_BG, command=self.toggle_minimize)
-        min_btn.pack(side="right", padx=2)
+        min_btn = ctk.CTkButton(title_bar, text="—", width=35, height=35, fg_color="transparent", 
+                                hover_color=AppConfig.SECONDARY_BG, corner_radius=0, command=self.toggle_minimize)
+        min_btn.pack(side="right")
 
         # Main Content
         main_frame = ctk.CTkFrame(self, fg_color="transparent")
         main_frame.pack(expand=True, fill="both", padx=15, pady=10)
 
-        initial_status = "Ready to Listen" if self.model else "Loading A.I. Model..."
+        initial_status = "Ready to Listen" if self.model else "Checking Model Files..."
         initial_color = AppConfig.TEXT_COLOR_SECONDARY if self.model else AppConfig.WARNING_COLOR
         initial_state = "normal" if self.model else "disabled"
 
-        self.status_label = ctk.CTkLabel(main_frame, text=initial_status, font=(AppConfig.FONT_FAMILY, AppConfig.STATUS_FONT_SIZE), text_color=initial_color)
-        self.status_label.pack(pady=(0, 5))
+        # Status and Level Indicator container
+        status_container = ctk.CTkFrame(main_frame, fg_color="transparent")
+        status_container.pack(fill="x", pady=(0, 5))
 
-        self.progress_bar = ctk.CTkProgressBar(main_frame, height=8, fg_color=AppConfig.PROGRESS_BG, progress_color=AppConfig.ACCENT_COLOR)
+        self.status_label = ctk.CTkLabel(status_container, text=initial_status, font=(AppConfig.FONT_FAMILY, AppConfig.STATUS_FONT_SIZE), text_color=initial_color)
+        self.status_label.pack(side="left", expand=True, padx=(20, 0))
+
+        self.level_indicator = ctk.CTkProgressBar(status_container, width=60, height=4, fg_color=AppConfig.PROGRESS_BG, progress_color=AppConfig.RECORD_BTN_COLOR)
+        self.level_indicator.set(0)
+        self.level_indicator.pack(side="right", padx=(0, 10))
+
+        self.progress_bar = ctk.CTkProgressBar(main_frame, height=8, fg_color=AppConfig.PROGRESS_BG, progress_color=self.accent_color)
         self.progress_bar.set(0)
+        if not self.model:
+            self.progress_bar.configure(mode="indeterminate")
+            self.progress_bar.start()
         self.progress_bar.pack(fill="x", pady=5)
 
         self.text_area = ctk.CTkTextbox(main_frame, font=(AppConfig.FONT_FAMILY, AppConfig.TEXT_FONT_SIZE), fg_color=AppConfig.TEXT_AREA_BG, border_width=1, border_color=AppConfig.BORDER_COLOR)
@@ -247,21 +297,26 @@ class SpeechWidget(ctk.CTk):
         btn_row = ctk.CTkFrame(main_frame, fg_color="transparent")
         btn_row.pack(fill="x")
 
-        self.record_btn = ctk.CTkButton(btn_row, text="START RECORDING", command=self.toggle_record, 
-                                        fg_color=AppConfig.RECORD_BTN_COLOR, hover_color=AppConfig.RECORD_BTN_HOVER, font=(AppConfig.FONT_FAMILY, AppConfig.TEXT_FONT_SIZE, "bold"), height=40, state=initial_state)
+        self.record_btn = ctk.CTkButton(btn_row, text="⏺ RECORD", command=self.toggle_record, 
+                                        fg_color=AppConfig.RECORD_BTN_COLOR, hover_color=AppConfig.RECORD_BTN_HOVER, 
+                                        font=(AppConfig.FONT_FAMILY, AppConfig.TEXT_FONT_SIZE, "bold"), height=45, state=initial_state)
         self.record_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
 
-        self.import_btn = ctk.CTkButton(btn_row, text="IMPORT", command=self.import_audio, 
-                                        fg_color=AppConfig.ACCENT_COLOR, width=70, height=40, state=initial_state)
+        self.import_btn = ctk.CTkButton(btn_row, text="📁", command=self.import_audio, 
+                                        fg_color=AppConfig.SECONDARY_BG, width=50, height=45, state=initial_state)
         self.import_btn.pack(side="right")
 
-        copy_btn = ctk.CTkButton(main_frame, text="COPY TEXT", command=self.copy_to_clipboard, 
-                                 fg_color=AppConfig.SECONDARY_BG, height=30)
-        copy_btn.pack(fill="x", pady=(10, 0))
+        # Action Button Row
+        action_row = ctk.CTkFrame(main_frame, fg_color="transparent")
+        action_row.pack(fill="x", pady=(10, 0))
 
-        clear_btn = ctk.CTkButton(main_frame, text="CLEAR TEXT", command=self.clear_text_area,
-                                  fg_color=AppConfig.UI_GRAY, height=30)
-        clear_btn.pack(fill="x", pady=(5, 0))
+        copy_btn = ctk.CTkButton(action_row, text="📋 COPY", command=self.copy_to_clipboard, 
+                                 fg_color=self.accent_color, hover_color=self.accent_hover, height=35)
+        copy_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
+
+        clear_btn = ctk.CTkButton(action_row, text="🗑️ CLEAR", command=self.clear_text_area,
+                                  fg_color=AppConfig.UI_GRAY, height=35)
+        clear_btn.pack(side="right", expand=True, fill="x")
 
     def setup_minimized_ui(self):
         # Save current position before shrinking
@@ -273,8 +328,8 @@ class SpeechWidget(ctk.CTk):
         
         # Use icon if loaded, otherwise fallback to "S"
         btn_kwargs = {
-            "fg_color": AppConfig.ACCENT_COLOR,
-            "hover_color": AppConfig.ACCENT_HOVER,
+            "fg_color": self.accent_color,
+            "hover_color": self.accent_hover,
             "corner_radius": size // 2,
             "width": size,
             "height": size,
@@ -290,7 +345,55 @@ class SpeechWidget(ctk.CTk):
             
         self.icon_label.pack(expand=True, fill="both")
 
+        # Context Menu & Hover bindings
+        self.icon_label.bind("<Button-3>", self.show_context_menu)
+        self.icon_label.bind("<Enter>", self.show_tooltip)
+        self.icon_label.bind("<Leave>", self.hide_tooltip)
+
+    def show_tooltip(self, event=None):
+        if self.tooltip_window or not self.is_minimized:
+            return
+            
+        x = self.winfo_x() + 70
+        y = self.winfo_y() + 10
+        
+        self.tooltip_window = tw = tk.Toplevel(self)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        tw.attributes("-topmost", True)
+        
+        hotkey_str = self.global_hotkey.replace("<", "").replace(">", "").upper()
+        text = f"sOuLSPEECH\nClick: Expand\nHotkey: {hotkey_str}"
+        
+        label = tk.Label(tw, text=text, justify='left',
+                         background="#2c3e50", foreground="white",
+                         relief='flat', borderwidth=0,
+                         font=(AppConfig.FONT_FAMILY, 9), padx=8, pady=5)
+        label.pack(ipadx=1)
+
+    def hide_tooltip(self, event=None):
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
+
+    def show_context_menu(self, event):
+        menu = tk.Menu(self, tearoff=0, bg="#1e1e1e", fg="white", activebackground=self.accent_color, activeforeground="white", borderwidth=0)
+        
+        record_label = "Stop Recording" if self.is_recording else "Start Recording"
+        menu.add_command(label=record_label, command=self.toggle_record)
+        menu.add_separator()
+        menu.add_command(label="Expand Window", command=self.toggle_minimize)
+        menu.add_command(label="Settings", command=self.open_settings)
+        menu.add_separator()
+        menu.add_command(label="Exit", command=self.quit)
+        
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
     def toggle_minimize(self):
+        self.hide_tooltip()
         self.is_minimized = not self.is_minimized
         self.setup_ui()
         self.setup_bindings()
@@ -329,7 +432,11 @@ class SpeechWidget(ctk.CTk):
             return
 
         try:
-            # The model loading can take several seconds
+            self.after(0, lambda: self.status_label.configure(text="Loading AI Model (this may take a moment)...", text_color=AppConfig.WARNING_COLOR))
+            
+            # Provide more granular pseudo-feedback as WhisperModel blocks while loading weights
+            self.after(800, lambda: self.status_label.configure(text=f"Loading weights into {self.whisper_device.upper()}..."))
+            
             self.model = WhisperModel(
                 model_path, 
                 device=self.whisper_device, 
@@ -351,12 +458,17 @@ class SpeechWidget(ctk.CTk):
             self.status_label.configure(text="Ready to Listen", text_color=AppConfig.TEXT_COLOR_SECONDARY)
             self.record_btn.configure(state="normal")
             self.import_btn.configure(state="normal")
+            self.progress_bar.stop()
+            self.progress_bar.configure(mode="determinate")
+            self.progress_bar.set(0)
 
     def _update_ui_on_model_error(self, error_msg):
         if not self.is_minimized:
             self.status_label.configure(text=f"Model Error: {error_msg}", text_color=AppConfig.ERROR_COLOR)
             self.record_btn.configure(state="disabled")
             self.import_btn.configure(state="disabled")
+            self.progress_bar.stop()
+            self.progress_bar.set(0)
 
     def setup_hotkey_listener(self):
         if self.hotkey_listener:
@@ -405,7 +517,7 @@ class SpeechWidget(ctk.CTk):
             return
         if not self.is_recording:
             self.is_recording = True
-            self.record_btn.configure(text="STOP", fg_color=AppConfig.STOP_BTN_COLOR)
+            self.record_btn.configure(text="⏹ STOP", fg_color=AppConfig.STOP_BTN_COLOR)
             self.status_label.configure(text="Recording...", text_color=AppConfig.ERROR_COLOR)
             self.progress_bar.set(0)
             self.progress_bar.configure(mode="indeterminate")
@@ -413,9 +525,10 @@ class SpeechWidget(ctk.CTk):
             threading.Thread(target=self.record_audio).start()
         else:
             self.is_recording = False
-            self.record_btn.configure(text="PROCESSING...", state="disabled")
+            self.record_btn.configure(text="⏳ PROCESSING...", state="disabled")
             self.progress_bar.stop()
             self.progress_bar.configure(mode="determinate")
+            self.update_level_bar(0)
 
     def record_audio(self):
         try:
@@ -428,10 +541,30 @@ class SpeechWidget(ctk.CTk):
                 input_device_index=self.selected_input_device_index
             )
             self.audio_frames = []
+            last_live_proc_time = time.time()
 
             while self.is_recording:
-                data = self.stream.read(AppConfig.CHUNK)
+                data = self.stream.read(AppConfig.CHUNK, exception_on_overflow=False)
                 self.audio_frames.append(data)
+                
+                # Audio level calculation (RMS) for visual feedback
+                try:
+                    count = len(data) // 2
+                    shorts = struct.unpack(f"{count}h", data)
+                    sum_squares = sum(s*s for s in shorts)
+                    rms = math.sqrt(sum_squares / max(1, count)) / 32768.0
+                    # Apply gain scaling for visibility (normal speech is usually low RMS)
+                    level = min(rms * 12, 1.0)
+                    self.after(0, lambda l=level: self.update_level_bar(l))
+                except Exception:
+                    pass
+
+                # Near real-time transcription trigger (every 2.5 seconds)
+                if time.time() - last_live_proc_time > 2.5 and not self.is_transcribing_live:
+                    last_live_proc_time = time.time()
+                    # Capture current buffer to process in background
+                    current_buffer = list(self.audio_frames)
+                    threading.Thread(target=self.live_process_audio, args=(current_buffer,), daemon=True).start()
 
             self.stream.stop_stream()
             self.stream.close()
@@ -457,8 +590,50 @@ class SpeechWidget(ctk.CTk):
             self.after(0, lambda: self.status_label.configure(text=f"Recording Error: {error_msg}", text_color=AppConfig.ERROR_COLOR))
             self.after(0, self._reset_record_button)
 
+    def live_process_audio(self, frames):
+        """Processes current audio buffer for real-time feedback."""
+        if not frames or self.is_transcribing_live:
+            return
+        
+        self.is_transcribing_live = True
+        temp_live_file = "live_cache.wav"
+        try:
+            wf = wave.open(temp_live_file, 'wb')
+            wf.setnchannels(AppConfig.CHANNELS)
+            wf.setsampwidth(self.p.get_sample_size(AppConfig.FORMAT))
+            wf.setframerate(AppConfig.RATE)
+            wf.writeframes(b''.join(frames))
+            wf.close()
+
+            # Use faster transcription for live feedback (lower beam size)
+            segments, _ = self.model.transcribe(
+                temp_live_file, 
+                beam_size=1, 
+                language=self.whisper_language
+            )
+            
+            full_text = ""
+            for segment in segments:
+                full_text += segment.text + " "
+            
+            if full_text.strip() and self.is_recording:
+                # Add ellipsis to show it's a partial live result
+                display_text = full_text.strip() + "..."
+                self.after(0, lambda t=display_text: self.update_text_area(t))
+
+        except Exception as e:
+            print(f"Live Transcription Error: {e}")
+        finally:
+            if os.path.exists(temp_live_file):
+                try:
+                    os.remove(temp_live_file)
+                except:
+                    pass
+            self.is_transcribing_live = False
+
     def process_audio(self, file_path):
         self.after(0, lambda: self.status_label.configure(text="Transcribing... 0%", text_color=AppConfig.WARNING_COLOR))
+        self.after(0, lambda: self.progress_bar.configure(mode="determinate"))
         self.after(0, lambda: self.progress_bar.set(0))
         
         try:
@@ -512,6 +687,13 @@ class SpeechWidget(ctk.CTk):
         self.progress_bar.set(val)
         self.status_label.configure(text=f"Transcribing... {int(val*100)}%")
 
+    def update_level_bar(self, level):
+        if not self.is_minimized and hasattr(self, 'level_indicator'):
+            try:
+                self.level_indicator.set(level)
+            except Exception:
+                pass
+
     def update_text_area(self, text):
         self.text_area.delete("1.0", "end")
         self.text_area.insert("1.0", text)
@@ -519,13 +701,23 @@ class SpeechWidget(ctk.CTk):
 
     def finalize_transcription(self, text):
         self._reset_record_button()
-        self.status_label.configure(text="Transcription Complete", text_color=AppConfig.SUCCESS_COLOR)
+        self.status_label.configure(text="Transcription Complete! Copy or Clear.", text_color=AppConfig.SUCCESS_COLOR)
+        
+        # Smoothly complete the bar and reset after a delay
         self.progress_bar.set(1.0)
-        # Optional: Auto-type out as before
-        # threading.Thread(target=self.type_out, args=(text,)).start()
+        self.after(2500, lambda: self.progress_bar.set(0) if not self.is_recording else None)
+        self.after(2500, lambda: self.status_label.configure(text="Ready to Listen", text_color=AppConfig.TEXT_COLOR_SECONDARY))
+        
+        if self.auto_copy:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            
+        if self.auto_type:
+            threading.Thread(target=self.type_out, args=(text,), daemon=True).start()
 
     def _reset_record_button(self):
-        self.record_btn.configure(text="START RECORDING", state="normal", fg_color=AppConfig.RECORD_BTN_COLOR)
+        self.record_btn.configure(text="⏺ RECORD", state="normal", fg_color=AppConfig.RECORD_BTN_COLOR)
+        self.update_level_bar(0)
 
     def get_audio_input_devices(self):
         devices = []
@@ -583,41 +775,97 @@ class SpeechWidget(ctk.CTk):
 
         # Hotkey
         ctk.CTkLabel(scroll_frame, text="Global Hotkey:").pack(pady=(10, 0))
-        hotkey_var = ctk.StringVar(value=self.global_hotkey)
-        hotkey_entry = ctk.CTkEntry(scroll_frame, textvariable=hotkey_var)
-        hotkey_entry.pack(pady=5)
         
-        def on_key_press(event):
-            modifiers = {
-                'Control_L': '<ctrl>', 'Control_R': '<ctrl>',
-                'Alt_L': '<alt>', 'Alt_R': '<alt>',
-                'Shift_L': '<shift>', 'Shift_R': '<shift>',
-                'Win_L': '<cmd>', 'Win_R': '<cmd>'
-            }
-            parts = []
-            if event.state & 0x0004: parts.append('<ctrl>')
-            if event.state & 0x0008 or event.state & 0x0020: parts.append('<alt>')
-            if event.state & 0x0001: parts.append('<shift>')
-            if event.state & 0x0040: parts.append('<cmd>')
+        hotkey_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        hotkey_frame.pack(pady=5, fill="x", padx=20)
+        
+        hotkey_var = ctk.StringVar(value=self.global_hotkey)
+        hotkey_display = ctk.CTkEntry(hotkey_frame, textvariable=hotkey_var, state="readonly", justify="center")
+        hotkey_display.pack(side="left", expand=True, fill="x", padx=(0, 5))
+        
+        def start_recording_hotkey():
+            record_btn.configure(text="Press keys...", state="disabled", fg_color=AppConfig.ORANGE_COLOR)
+            hotkey_display.focus_set()
+            
+            def on_record_key(event):
+                modifiers = {
+                    'Control_L': '<ctrl>', 'Control_R': '<ctrl>',
+                    'Alt_L': '<alt>', 'Alt_R': '<alt>',
+                    'Shift_L': '<shift>', 'Shift_R': '<shift>',
+                    'Win_L': '<cmd>', 'Win_R': '<cmd>'
+                }
+                
+                parts = []
+                if event.state & 0x0004: parts.append('<ctrl>')
+                if event.state & 0x0008 or event.state & 0x0020: parts.append('<alt>')
+                if event.state & 0x0001: parts.append('<shift>')
+                if event.state & 0x0040: parts.append('<cmd>')
 
-            keysym = event.keysym
-            if keysym in modifiers:
-                mod_str = modifiers[keysym]
-                if mod_str not in parts: parts.append(mod_str)
-                hotkey_var.set("+".join(parts))
-            else:
-                key_name = keysym.lower()
-                if len(key_name) > 1: key_name = f"<{key_name}>"
-                if key_name not in parts: parts.append(key_name)
-                hotkey_var.set("+".join(parts))
-            return "break"
+                keysym = event.keysym
+                
+                if keysym in modifiers:
+                    mod_str = modifiers[keysym]
+                    if mod_str not in parts: parts.append(mod_str)
+                    hotkey_var.set("+".join(parts))
+                    return "break"
+                else:
+                    key_name = keysym.lower()
+                    # Mapping for pynput compatibility
+                    mapping = {'next': 'page_down', 'prior': 'page_up', 'return': 'enter'}
+                    key_name = mapping.get(key_name, key_name)
+                    
+                    if len(key_name) > 1: key_name = f"<{key_name}>"
+                    if key_name not in parts: parts.append(key_name)
+                    hotkey_var.set("+".join(parts))
+                    
+                    record_btn.configure(text="RECORD", state="normal", fg_color=self.accent_color)
+                    hotkey_display.unbind("<KeyPress>")
+                    # Return focus to scroll frame
+                    scroll_frame.focus_set()
+                    return "break"
 
-        hotkey_entry.bind("<KeyPress>", on_key_press)
-        ctk.CTkLabel(scroll_frame, text="Click above and press keys to set hotkey", font=(AppConfig.FONT_FAMILY, 9), text_color=AppConfig.TEXT_COLOR_SECONDARY).pack()
+            hotkey_display.bind("<KeyPress>", on_record_key)
+
+        record_btn = ctk.CTkButton(hotkey_frame, text="RECORD", width=80, command=start_recording_hotkey, fg_color=self.accent_color, hover_color=self.accent_hover)
+        record_btn.pack(side="right")
+        
+        ctk.CTkLabel(scroll_frame, text="Click Record then press your key combination", font=(AppConfig.FONT_FAMILY, 9), text_color=AppConfig.TEXT_COLOR_SECONDARY).pack()
         
         hotkey_enabled_var = ctk.BooleanVar(value=self.hotkey_enabled)
         hotkey_cb = ctk.CTkCheckBox(scroll_frame, text="Enable Hotkey", variable=hotkey_enabled_var)
         hotkey_cb.pack(pady=5)
+
+        auto_copy_var = ctk.BooleanVar(value=self.auto_copy)
+        auto_copy_cb = ctk.CTkCheckBox(scroll_frame, text="Auto-copy to Clipboard", variable=auto_copy_var)
+        auto_copy_cb.pack(pady=5)
+
+        auto_type_var = ctk.BooleanVar(value=self.auto_type)
+        auto_type_cb = ctk.CTkCheckBox(scroll_frame, text="Auto-type into Active Window", variable=auto_type_var)
+        auto_type_cb.pack(pady=5)
+
+        # Window Appearance & Theming
+        ctk.CTkLabel(scroll_frame, text="Appearance & Theming:").pack(pady=(10, 0))
+        
+        # Mode Toggle
+        mode_var = ctk.StringVar(value=self.appearance_mode)
+        mode_menu = ctk.CTkOptionMenu(scroll_frame, values=["Dark", "Light"], variable=mode_var,
+                                      command=lambda m: ctk.set_appearance_mode(m))
+        mode_menu.pack(pady=5)
+        
+        # Accent Color
+        ctk.CTkLabel(scroll_frame, text="Accent Color:").pack(pady=(5, 0))
+        accent_var = ctk.StringVar(value=self.accent_color_name)
+        accent_menu = ctk.CTkOptionMenu(scroll_frame, values=list(AppConfig.ACCENT_PRESETS.keys()), variable=accent_var)
+        accent_menu.pack(pady=5)
+
+        always_on_top_var = ctk.BooleanVar(value=self.always_on_top)
+        always_on_top_cb = ctk.CTkCheckBox(scroll_frame, text="Always on Top", variable=always_on_top_var)
+        always_on_top_cb.pack(pady=5)
+
+        ctk.CTkLabel(scroll_frame, text="Transparency:").pack(pady=(5, 0))
+        opacity_var = ctk.DoubleVar(value=self.window_opacity)
+        opacity_slider = ctk.CTkSlider(scroll_frame, from_=0.5, to=1.0, variable=opacity_var)
+        opacity_slider.pack(pady=5)
 
         # Language
         ctk.CTkLabel(scroll_frame, text="Language (ISO code):").pack(pady=(10, 0))
@@ -633,6 +881,16 @@ class SpeechWidget(ctk.CTk):
             needs_model_reload = (self.whisper_device != new_device or 
                                 self.whisper_compute_type != new_compute)
 
+            # Update Theming
+            self.appearance_mode = mode_var.get()
+            self.accent_color_name = accent_var.get()
+            preset = AppConfig.ACCENT_PRESETS.get(self.accent_color_name)
+            self.accent_color = preset["main"]
+            self.accent_hover = preset["hover"]
+            
+            # Refresh main UI to apply theme/accent colors
+            self.after(100, self.setup_ui)
+
             selected_name = input_device_var.get()
             if selected_name == "Default":
                 self.selected_input_device_index = None
@@ -646,6 +904,15 @@ class SpeechWidget(ctk.CTk):
             self.whisper_compute_type = new_compute
             self.global_hotkey = hotkey_var.get().strip()
             self.hotkey_enabled = hotkey_enabled_var.get()
+            self.auto_copy = auto_copy_var.get()
+            self.auto_type = auto_type_var.get()
+            self.window_opacity = opacity_var.get()
+            self.always_on_top = always_on_top_var.get()
+            
+            # Apply window settings immediately
+            self.attributes("-topmost", self.always_on_top)
+            self.attributes("-alpha", self.window_opacity)
+
             val = lang_var.get().strip().lower()
             self.whisper_language = None if val == "auto" else val
             
@@ -656,6 +923,8 @@ class SpeechWidget(ctk.CTk):
                 self.status_label.configure(text="Reloading Model...", text_color=AppConfig.WARNING_COLOR)
                 self.record_btn.configure(state="disabled")
                 self.import_btn.configure(state="disabled")
+                self.progress_bar.configure(mode="indeterminate")
+                self.progress_bar.start()
                 threading.Thread(target=self._load_whisper_model, daemon=True).start()
             
             self.status_label.configure(text="Changes Saved!", text_color=AppConfig.SUCCESS_COLOR)
@@ -673,16 +942,25 @@ class SpeechWidget(ctk.CTk):
             self.load_config()
             self.setup_hotkey_listener()
             
+            # Apply restored window settings
+            self.attributes("-topmost", self.always_on_top)
+            self.attributes("-alpha", self.window_opacity)
+            
             # Reload model to reflect default compute settings
             self.status_label.configure(text="Restoring Defaults & Reloading...", text_color=AppConfig.WARNING_COLOR)
             self.record_btn.configure(state="disabled")
             self.import_btn.configure(state="disabled")
+            self.progress_bar.configure(mode="indeterminate")
+            self.progress_bar.start()
             threading.Thread(target=self._load_whisper_model, daemon=True).start()
+            
+            # Refresh UI for appearance/accents
+            self.setup_ui()
             
             self.after(1000, lambda: self.status_label.configure(text="Defaults Restored!", text_color=AppConfig.SUCCESS_COLOR))
             settings_win.destroy()
 
-        save_btn = ctk.CTkButton(scroll_frame, text="SAVE CHANGES", command=save_settings, fg_color=AppConfig.ACCENT_COLOR)
+        save_btn = ctk.CTkButton(scroll_frame, text="SAVE CHANGES", command=save_settings, fg_color=self.accent_color, hover_color=self.accent_hover)
         save_btn.pack(pady=(20, 10))
 
         reset_btn = ctk.CTkButton(scroll_frame, text="RESTORE DEFAULTS", command=restore_defaults, fg_color=AppConfig.STOP_BTN_COLOR)

@@ -1,8 +1,14 @@
 {
-    "last_geometry": "350x450+409+125",
+    "last_geometry": "350x450+936+128",
     "whisper_device": "cpu",
     "whisper_compute_type": "int8",
     "whisper_language": null,
     "global_hotkey": "<ctrl>+<alt>+s",
-    "hotkey_enabled": true
+    "hotkey_enabled": true,
+    "auto_copy": false,
+    "auto_type": false,
+    "window_opacity": 0.95,
+    "always_on_top": true,
+    "appearance_mode": "Dark",
+    "accent_color": "Blue"
 }
