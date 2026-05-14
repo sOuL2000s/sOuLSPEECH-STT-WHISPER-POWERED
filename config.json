@@ -1,17 +1,65 @@
 {
-    "last_geometry": "350x450+944+224",
+    "last_geometry": "350x450+580+0",
     "whisper_device": "cpu",
     "whisper_compute_type": "int8",
     "whisper_language": null,
     "global_hotkey": "<alt>+v",
     "hotkey_enabled": true,
     "auto_copy": false,
-    "auto_type": true,
+    "auto_type": false,
     "window_opacity": 0.95,
     "always_on_top": true,
     "appearance_mode": "Dark",
     "accent_color": "Blue",
     "history": [
+        {
+            "timestamp": "2026-05-14 22:15:04",
+            "text": "So hello darkness my old friend"
+        },
+        {
+            "timestamp": "2026-05-14 22:13:17",
+            "text": "Suppose if the user is unable to put the cursor in an active text box within the time interval  after clicking the stop button and the processing finishes, I mean the transcription is done.  After that the user supposedly takes a lot of time to put the cursor in the right active text box, then what should he do?  It should stay inside the clipboard or somewhere such that when the user places the cursor in the active text box somewhere, then only the text will be written there.  So, how do I do that?  Please tell me."
+        },
+        {
+            "timestamp": "2026-05-14 22:08:43",
+            "text": "In the minimized widget, I see that the maximized button and the three dots button is  not visible or if they are visible, maybe they are getting covered by the text preview area.  I want them to be visible and accessible so that user can click on them and do one more thing.  I want to make the, yeah, leave it."
+        },
+        {
+            "timestamp": "2026-05-14 21:27:18",
+            "text": "Hey there, can you hear me here?  I hope you can and you're doing well."
+        },
+        {
+            "timestamp": "2026-05-14 21:22:54",
+            "text": "For better and clearer visualization in the minimized widget,  can you show a level bar where the color fills from left to right  to show the progress that the transcription is going on?  And I want the minimized widget to be placed properly  if the user wants, they can place it.  I mean, they can stick it to the above the task bar,  they can stick it above the task bar,  and they should be able to stick it on the right left  or extreme top of the screen wherever they want.  They can magnetize it to one side even,  and when it will open, then it will be fine,  but they can magnetize it at some place  so that it doesn't interfere their vision  any visuals on the screen."
+        },
+        {
+            "timestamp": "2026-05-14 21:19:35",
+            "text": "In the minimized widget, when listening, it's showing as listening but when it is transcribing  then it is not writing anything but when it is when the transcription is done then it  is written, the done is being written there. So, why is the transcribing not being written there  or can you add a loading spinner at the place of the start or stop button to show the user  that the transcription is going on?"
+        },
+        {
+            "timestamp": "2026-05-14 21:17:57",
+            "text": "Hey there, do you know me?"
+        },
+        {
+            "timestamp": "2026-05-14 21:17:41",
+            "text": "Hey there, do you know me?"
+        },
+        {
+            "timestamp": "2026-05-14 21:14:07",
+            "text": "Hi there, brother. How are you?"
+        },
+        {
+            "timestamp": "2026-05-14 21:13:16",
+            "text": "Can you spell the word brother to me if you do, let me know."
+        },
+        {
+            "timestamp": "2026-05-14 21:12:38",
+            "text": "So, rather do you hear me correctly, if you do, then tell me who you are."
+        },
+        {
+            "timestamp": "2026-05-14 21:08:36",
+            "text": "So, hello darkness my old friend, can you hear me?"
+        },
         {
             "timestamp": "2026-05-14 10:26:30",
             "text": "Slow there. Do I know you're from somewhere? Yeah, I do."

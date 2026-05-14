@@ -122,6 +122,7 @@ class SpeechWidget(ctk.CTk):
         
         # --- Variables & Config ---
         self.is_recording = False
+        self.is_processing = False
         self.is_minimized = False
         self.is_animating = False
         self.is_transcribing_live = False
@@ -331,40 +332,70 @@ class SpeechWidget(ctk.CTk):
         clear_btn.pack(side="right", expand=True, fill="x")
 
     def setup_minimized_ui(self):
-        # Pill shape for Dynamic Island UI
-        width, height = 200, 45
+        # Windows Speech-to-Text style UI
+        width, height = 280, 48
         self.geometry(f"{width}x{height}")
         
-        pill_frame = ctk.CTkFrame(self, fg_color=AppConfig.TITLE_BAR_BG, corner_radius=22, border_width=1, border_color=self.accent_color)
+        pill_frame = ctk.CTkFrame(self, fg_color=AppConfig.TITLE_BAR_BG, corner_radius=24, border_width=1, border_color=self.accent_color)
         pill_frame.pack(expand=True, fill="both", padx=2, pady=2)
         
-        # Indicator on left
-        status_color = AppConfig.RECORD_BTN_COLOR if self.is_recording else self.accent_color
-        self.island_icon = ctk.CTkLabel(pill_frame, text="●" if self.is_recording else "S", 
-                                        font=(AppConfig.FONT_FAMILY, 18, "bold"), 
-                                        text_color=status_color, width=40)
-        self.island_icon.pack(side="left", padx=(10, 5))
+        # 1. Record/Stop Toggle Button (Left)
+        if self.is_processing:
+            record_icon = "⏳"
+            record_color = AppConfig.UI_GRAY
+            record_hover = record_color
+            btn_state = "disabled"
+        else:
+            record_icon = "⏹" if self.is_recording else "🎤"
+            record_color = AppConfig.STOP_BTN_COLOR if self.is_recording else self.accent_color
+            record_hover = AppConfig.STOP_BTN_HOVER if self.is_recording else self.accent_hover
+            btn_state = "normal"
         
-        # Status Text in middle
-        display_text = "Recording..." if self.is_recording else "sOuLSPEECH"
-        self.island_label = ctk.CTkLabel(pill_frame, text=display_text, 
-                                         font=(AppConfig.FONT_FAMILY, 12, "bold"), 
-                                         text_color="white")
-        self.island_label.pack(side="left", expand=True)
+        self.island_record_btn = ctk.CTkButton(pill_frame, text=record_icon, width=36, height=36, 
+                                              fg_color=record_color, hover_color=record_hover,
+                                              corner_radius=18, font=(AppConfig.FONT_FAMILY, 16),
+                                              command=self.toggle_record, state=btn_state)
+        self.island_record_btn.pack(side="left", padx=(10, 5))
 
-        # Expand button on right
-        expand_btn = ctk.CTkButton(pill_frame, text="↗", width=30, height=30, 
+        # 4. Three dots menu button (Far Right)
+        self.menu_btn = ctk.CTkButton(pill_frame, text="•••", width=32, height=32, 
+                                     fg_color="transparent", hover_color=AppConfig.SECONDARY_BG,
+                                     corner_radius=16, font=(AppConfig.FONT_FAMILY, 10, "bold"),
+                                     command=lambda: self.show_context_menu_from_btn(self.menu_btn))
+        self.menu_btn.pack(side="right", padx=(2, 10))
+
+        # 3. Maximize Button (Next to Menu)
+        expand_btn = ctk.CTkButton(pill_frame, text="↗", width=32, height=32, 
                                    fg_color="transparent", hover_color=AppConfig.SECONDARY_BG,
-                                   corner_radius=15, command=self.toggle_minimize)
-        expand_btn.pack(side="right", padx=5)
+                                   corner_radius=16, font=(AppConfig.FONT_FAMILY, 14),
+                                   command=self.toggle_minimize)
+        expand_btn.pack(side="right", padx=2)
+        
+        # 2. Status Text / Partial result / Progress (Middle Container)
+        label_container = ctk.CTkFrame(pill_frame, fg_color="transparent")
+        label_container.pack(side="left", expand=True, fill="both", padx=5)
 
-        # Bindings for the pill frame to allow dragging and interaction
-        for widget in [pill_frame, self.island_icon, self.island_label]:
+        if self.is_processing:
+            display_text = "Transcribing..."
+        elif self.is_recording:
+            display_text = "Listening..."
+        else:
+            display_text = "sOuLSPEECH"
+
+        self.island_label = ctk.CTkLabel(label_container, text=display_text, 
+                                         font=(AppConfig.FONT_FAMILY, 10, "bold"), 
+                                         text_color="white", anchor="w")
+        self.island_label.pack(fill="x", pady=(8, 0))
+
+        self.island_progress = ctk.CTkProgressBar(label_container, height=4, fg_color=AppConfig.PROGRESS_BG, progress_color=self.accent_color)
+        self.island_progress.set(0)
+        self.island_progress.pack(fill="x", pady=(2, 8))
+
+        # Bindings for the pill frame to allow dragging
+        for widget in [pill_frame, self.island_label]:
             widget.bind("<Button-1>", self.start_move)
             widget.bind("<B1-Motion>", self.do_move)
             widget.bind("<Button-3>", self.show_context_menu)
-            widget.bind("<Enter>", self.show_tooltip)
-            widget.bind("<Leave>", self.hide_tooltip)
 
     def show_tooltip(self, event=None):
         if self.tooltip_window or not self.is_minimized:
@@ -393,18 +424,28 @@ class SpeechWidget(ctk.CTk):
             self.tooltip_window = None
 
     def show_context_menu(self, event):
+        self.show_context_menu_at(event.x_root, event.y_root)
+
+    def show_context_menu_from_btn(self, widget):
+        # Calculate position relative to widget
+        x = widget.winfo_rootx()
+        y = widget.winfo_rooty() + widget.winfo_height()
+        self.show_context_menu_at(x, y)
+
+    def show_context_menu_at(self, x, y):
         menu = tk.Menu(self, tearoff=0, bg="#1e1e1e", fg="white", activebackground=self.accent_color, activeforeground="white", borderwidth=0)
         
         record_label = "Stop Recording" if self.is_recording else "Start Recording"
         menu.add_command(label=record_label, command=self.toggle_record)
         menu.add_separator()
-        menu.add_command(label="Expand Window", command=self.toggle_minimize)
+        menu.add_command(label="Show Main Window" if self.is_minimized else "Minimize to Widget", command=self.toggle_minimize)
+        menu.add_command(label="History", command=self.open_history)
         menu.add_command(label="Settings", command=self.open_settings)
         menu.add_separator()
         menu.add_command(label="Exit", command=self.quit)
         
         try:
-            menu.tk_popup(event.x_root, event.y_root)
+            menu.tk_popup(x, y)
         finally:
             menu.grab_release()
 
@@ -560,7 +601,32 @@ class SpeechWidget(ctk.CTk):
     def do_move(self, event):
         deltax = event.x - self.x
         deltay = event.y - self.y
-        self.geometry(f"+{self.winfo_x() + deltax}+{self.winfo_y() + deltay}")
+        
+        new_x = self.winfo_x() + deltax
+        new_y = self.winfo_y() + deltay
+        
+        # Snapping logic (magnetize to edges)
+        snap_threshold = 30
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        
+        # Window width/height
+        win_w = self.winfo_width()
+        win_h = self.winfo_height()
+        
+        # Snap to horizontal edges
+        if new_x < snap_threshold:
+            new_x = 0
+        elif new_x + win_w > screen_width - snap_threshold:
+            new_x = screen_width - win_w
+            
+        # Snap to vertical edges
+        if new_y < snap_threshold:
+            new_y = 0
+        elif new_y + win_h > screen_height - snap_threshold:
+            new_y = screen_height - win_h
+            
+        self.geometry(f"+{new_x}+{new_y}")
 
     def copy_to_clipboard(self):
         text = self.text_area.get("1.0", "end-1c")
@@ -686,9 +752,11 @@ class SpeechWidget(ctk.CTk):
             
             if full_text.strip() and self.is_recording:
                 # Add ellipsis to show it's a partial live result
-                display_text = full_text.strip() + "..."
-                self.after(0, lambda t=display_text: self.update_text_area(t))
-
+                text = full_text.strip()
+                self.after(0, lambda t=text: self.update_text_area(t))
+                
+                # but Whisper partials shift, so we just show it on widget
+                # Windows STT behavior: final typing happens on stop.
         except Exception as e:
             print(f"Live Transcription Error: {e}")
         finally:
@@ -700,9 +768,17 @@ class SpeechWidget(ctk.CTk):
             self.is_transcribing_live = False
 
     def process_audio(self, file_path):
-        self.after(0, lambda: self.status_label.configure(text="Transcribing... 0%", text_color=AppConfig.WARNING_COLOR))
-        self.after(0, lambda: self.progress_bar.configure(mode="determinate"))
-        self.after(0, lambda: self.progress_bar.set(0))
+        self.is_processing = True
+        def start_ui():
+            if self.is_minimized:
+                self.setup_ui()
+            if hasattr(self, 'status_label') and self.status_label.winfo_exists():
+                self.status_label.configure(text="Transcribing... 0%", text_color=AppConfig.WARNING_COLOR)
+            if hasattr(self, 'progress_bar') and self.progress_bar.winfo_exists():
+                self.progress_bar.configure(mode="determinate")
+                self.progress_bar.set(0)
+        
+        self.after(0, start_ui)
         
         try:
             if not os.path.exists(file_path):
@@ -731,7 +807,7 @@ class SpeechWidget(ctk.CTk):
                 self.after(0, lambda t=full_text: self.update_text_area(t))
 
             if not full_text.strip():
-                self.after(0, lambda: self.status_label.configure(text="No speech detected.", text_color=AppConfig.ORANGE_COLOR))
+                self.after(0, lambda: self.status_label.configure(text="No speech detected.", text_color=AppConfig.ORANGE_COLOR) if hasattr(self, 'status_label') and self.status_label.winfo_exists() else None)
                 self.after(0, self._reset_record_button)
             else:
                 self.after(0, lambda: self.finalize_transcription(full_text.strip()))
@@ -743,8 +819,10 @@ class SpeechWidget(ctk.CTk):
                 error_msg = "CPU does not support float16. Change compute type to int8."
             
             self.after(0, lambda: self.status_label.configure(text=f"Transcription Error: {error_msg}", text_color=AppConfig.ERROR_COLOR))
+            self.is_processing = False
             self.after(0, self._reset_record_button)
         finally:
+            self.is_processing = False
             if AppConfig.TEMP_AUDIO_FILE in file_path and os.path.exists(file_path):
                 try:
                     os.remove(file_path)
@@ -753,54 +831,92 @@ class SpeechWidget(ctk.CTk):
         
     def update_progress(self, val):
         if not self.is_minimized:
-            self.progress_bar.set(val)
-            self.status_label.configure(text=f"Transcribing... {int(val*100)}%")
-        elif hasattr(self, 'island_label'):
-            self.island_label.configure(text=f"Progress: {int(val*100)}%")
+            if hasattr(self, 'progress_bar') and self.progress_bar.winfo_exists():
+                self.progress_bar.set(val)
+            if hasattr(self, 'status_label') and self.status_label.winfo_exists():
+                self.status_label.configure(text=f"Transcribing... {int(val*100)}%")
+        
+        if hasattr(self, 'island_progress') and self.island_progress.winfo_exists():
+            self.island_progress.set(val)
+        if hasattr(self, 'island_label') and self.island_label.winfo_exists():
+            self.island_label.configure(text=f"Transcribing... {int(val*100)}%")
 
     def update_level_bar(self, level):
-        if not self.is_minimized and hasattr(self, 'level_indicator'):
+        if not self.is_minimized and hasattr(self, 'level_indicator') and self.level_indicator.winfo_exists():
             try:
                 self.level_indicator.set(level)
             except Exception:
                 pass
+        elif self.is_minimized and hasattr(self, 'island_progress') and self.island_progress.winfo_exists():
+            if self.is_recording and not self.is_processing:
+                try:
+                    self.island_progress.set(level)
+                except Exception:
+                    pass
 
     def update_text_area(self, text):
         if not self.is_minimized:
-            self.text_area.delete("1.0", "end")
-            self.text_area.insert("1.0", text)
-            self.text_area.see("end")
-        elif hasattr(self, 'island_label'):
+            if hasattr(self, 'text_area') and self.text_area.winfo_exists():
+                self.text_area.delete("1.0", "end")
+                self.text_area.insert("1.0", text)
+                self.text_area.see("end")
+        
+        if hasattr(self, 'island_label') and self.island_label.winfo_exists():
             snippet = text.strip()
-            if len(snippet) > 18: snippet = snippet[:15] + "..."
-            self.island_label.configure(text=snippet)
+            # Truncate to ensure it fits the dynamic island middle section
+            if len(snippet) > 28: snippet = "..." + snippet[-25:]
+            
+            if self.is_processing:
+                if snippet:
+                    self.island_label.configure(text=snippet)
+            else:
+                default_text = "Listening..." if self.is_recording else "sOuLSPEECH"
+                self.island_label.configure(text=snippet if snippet else default_text)
 
     def finalize_transcription(self, text):
+        self.is_processing = False
         self._reset_record_button()
-        self.status_label.configure(text="Transcription Complete! Copy or Clear.", text_color=AppConfig.SUCCESS_COLOR)
         
+        if not self.is_minimized:
+            if hasattr(self, 'status_label') and self.status_label.winfo_exists():
+                self.status_label.configure(text="Transcription Complete! Copy or Clear.", text_color=AppConfig.SUCCESS_COLOR)
+                self.after(2500, lambda: self.status_label.configure(text="Ready to Listen", text_color=AppConfig.TEXT_COLOR_SECONDARY) if hasattr(self, 'status_label') and self.status_label.winfo_exists() and not self.is_recording else None)
+            
+            # Smoothly complete the bar and reset after a delay
+            if hasattr(self, 'progress_bar') and self.progress_bar.winfo_exists():
+                self.progress_bar.set(1.0)
+                self.after(2500, lambda: self.progress_bar.set(0) if hasattr(self, 'progress_bar') and self.progress_bar.winfo_exists() and not self.is_recording else None)
+        else:
+            if hasattr(self, 'island_label') and self.island_label.winfo_exists():
+                self.island_label.configure(text="Done!")
+                self.after(2000, lambda: self.island_label.configure(text="sOuLSPEECH") if hasattr(self, 'island_label') and self.island_label.winfo_exists() and not self.is_recording else None)
+
         # Add to history
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         self.history.insert(0, {"timestamp": timestamp, "text": text})
         if len(self.history) > 50: # Limit history size
             self.history = self.history[:50]
         self.save_config()
-
-        # Smoothly complete the bar and reset after a delay
-        self.progress_bar.set(1.0)
-        self.after(2500, lambda: self.progress_bar.set(0) if not self.is_recording else None)
-        self.after(2500, lambda: self.status_label.configure(text="Ready to Listen", text_color=AppConfig.TEXT_COLOR_SECONDARY))
         
         if self.auto_copy:
             self.clipboard_clear()
             self.clipboard_append(text)
             
-        if self.auto_type:
+        # Ensure it's in clipboard for manual paste if typing fails or isn't desired
+        if self.auto_copy or self.auto_type or self.is_minimized:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            
+        # If minimized, we ALWAYS type into active field regardless of auto_type setting
+        # to match Windows STT behavior as requested
+        if self.is_minimized or self.auto_type:
             threading.Thread(target=self.type_out, args=(text,), daemon=True).start()
 
     def _reset_record_button(self):
+        self.is_processing = False
         if not self.is_minimized:
-            self.record_btn.configure(text="⏺ RECORD", state="normal", fg_color=AppConfig.RECORD_BTN_COLOR)
+            if hasattr(self, 'record_btn') and self.record_btn.winfo_exists():
+                self.record_btn.configure(text="⏺ RECORD", state="normal", fg_color=AppConfig.RECORD_BTN_COLOR)
         else:
             self.setup_ui()
         self.update_level_bar(0)
@@ -1006,15 +1122,25 @@ class SpeechWidget(ctk.CTk):
             self.setup_hotkey_listener()
             
             if needs_model_reload:
-                self.status_label.configure(text="Reloading Model...", text_color=AppConfig.WARNING_COLOR)
-                self.record_btn.configure(state="disabled")
-                self.import_btn.configure(state="disabled")
-                self.progress_bar.configure(mode="indeterminate")
-                self.progress_bar.start()
                 threading.Thread(target=self._load_whisper_model, daemon=True).start()
             
-            self.status_label.configure(text="Changes Saved!", text_color=AppConfig.SUCCESS_COLOR)
-            self.after(3000, lambda: self.status_label.configure(text="Ready to Listen", text_color=AppConfig.TEXT_COLOR_SECONDARY))
+            def show_final_status():
+                # Check if widgets exist before configuring to avoid TclErrors
+                if not self.is_minimized and hasattr(self, 'status_label') and self.status_label.winfo_exists():
+                    self.status_label.configure(text="Changes Saved!", text_color=AppConfig.SUCCESS_COLOR)
+                    if needs_model_reload:
+                        self.record_btn.configure(state="disabled")
+                        self.import_btn.configure(state="disabled")
+                        self.progress_bar.configure(mode="indeterminate")
+                        self.progress_bar.start()
+                    else:
+                        self.after(3000, lambda: self.status_label.configure(text="Ready to Listen", text_color=AppConfig.TEXT_COLOR_SECONDARY) if hasattr(self, 'status_label') and self.status_label.winfo_exists() else None)
+                elif hasattr(self, 'island_label') and self.island_label.winfo_exists():
+                    self.island_label.configure(text="Changes Saved!")
+                    self.after(3000, lambda: self.island_label.configure(text="sOuLSPEECH") if hasattr(self, 'island_label') and self.island_label.winfo_exists() else None)
+
+            # Wait for setup_ui (scheduled via after 100) to complete before updating status
+            self.after(250, show_final_status)
             settings_win.destroy()
 
         def restore_defaults():
@@ -1032,18 +1158,25 @@ class SpeechWidget(ctk.CTk):
             self.attributes("-topmost", self.always_on_top)
             self.attributes("-alpha", self.window_opacity)
             
-            # Reload model to reflect default compute settings
-            self.status_label.configure(text="Restoring Defaults & Reloading...", text_color=AppConfig.WARNING_COLOR)
-            self.record_btn.configure(state="disabled")
-            self.import_btn.configure(state="disabled")
-            self.progress_bar.configure(mode="indeterminate")
-            self.progress_bar.start()
-            threading.Thread(target=self._load_whisper_model, daemon=True).start()
-            
             # Refresh UI for appearance/accents
             self.setup_ui()
             
-            self.after(1000, lambda: self.status_label.configure(text="Defaults Restored!", text_color=AppConfig.SUCCESS_COLOR))
+            # Reload model to reflect default compute settings
+            threading.Thread(target=self._load_whisper_model, daemon=True).start()
+            
+            def show_restored_status():
+                if not self.is_minimized and hasattr(self, 'status_label') and self.status_label.winfo_exists():
+                    self.status_label.configure(text="Defaults Restored!", text_color=AppConfig.SUCCESS_COLOR)
+                    self.record_btn.configure(state="disabled")
+                    self.import_btn.configure(state="disabled")
+                    self.progress_bar.configure(mode="indeterminate")
+                    self.progress_bar.start()
+                    self.after(3000, lambda: self.status_label.configure(text="Ready to Listen", text_color=AppConfig.TEXT_COLOR_SECONDARY) if hasattr(self, 'status_label') and self.status_label.winfo_exists() else None)
+                elif hasattr(self, 'island_label') and self.island_label.winfo_exists():
+                    self.island_label.configure(text="Defaults Restored")
+                    self.after(3000, lambda: self.island_label.configure(text="sOuLSPEECH") if hasattr(self, 'island_label') and self.island_label.winfo_exists() else None)
+
+            self.after(250, show_restored_status)
             settings_win.destroy()
 
         save_btn = ctk.CTkButton(scroll_frame, text="SAVE CHANGES", command=save_settings, fg_color=self.accent_color, hover_color=self.accent_hover)
@@ -1132,9 +1265,48 @@ class SpeechWidget(ctk.CTk):
         refresh_history()
 
     def type_out(self, text):
+        """
+        Waits for the user to switch focus away from the app 
+        before typing the transcription into the active field.
+        """
         if not text: return
-        time.sleep(0.5)
+        
+        # On Windows, we can wait until the foreground window is no longer our app
+        if os.name == 'nt':
+            import ctypes
+            user32 = ctypes.windll.user32
+            
+            # Get the handle of our application window
+            # Note: overrideredirect windows can be tricky, but we check by ID
+            try:
+                app_hwnd = user32.GetActiveWindow()
+                
+                # Update status to let user know we are waiting
+                self.after(0, lambda: self.status_label.configure(
+                    text="Click where you want to type...", 
+                    text_color=AppConfig.ORANGE_COLOR) if hasattr(self, 'status_label') and self.status_label.winfo_exists() else None
+                )
+
+                # Wait for up to 10 seconds for a focus change
+                start_wait = time.time()
+                while time.time() - start_wait < 10:
+                    current_hwnd = user32.GetForegroundWindow()
+                    if current_hwnd != app_hwnd and current_hwnd != 0:
+                        # User has switched to another window
+                        break
+                    time.sleep(0.2)
+            except Exception as e:
+                print(f"Focus detection error: {e}")
+        
+        # Small buffer for the target application to settle focus
+        time.sleep(0.6)
         self.keyboard.type(text)
+        
+        # Reset status after typing
+        self.after(0, lambda: self.status_label.configure(
+            text="Text Typed!", 
+            text_color=AppConfig.SUCCESS_COLOR) if hasattr(self, 'status_label') and self.status_label.winfo_exists() else None
+        )
 
 if __name__ == "__main__":
     app = SpeechWidget()
