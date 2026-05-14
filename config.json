@@ -1,14 +1,40 @@
 {
-    "last_geometry": "350x450+936+128",
+    "last_geometry": "350x450+944+224",
     "whisper_device": "cpu",
     "whisper_compute_type": "int8",
     "whisper_language": null,
-    "global_hotkey": "<ctrl>+<alt>+s",
+    "global_hotkey": "<alt>+v",
     "hotkey_enabled": true,
     "auto_copy": false,
-    "auto_type": false,
+    "auto_type": true,
     "window_opacity": 0.95,
     "always_on_top": true,
     "appearance_mode": "Dark",
-    "accent_color": "Blue"
+    "accent_color": "Blue",
+    "history": [
+        {
+            "timestamp": "2026-05-14 10:26:30",
+            "text": "Slow there. Do I know you're from somewhere? Yeah, I do."
+        },
+        {
+            "timestamp": "2026-05-14 10:09:21",
+            "text": "Okay there, how are you? Is this the American Dream?"
+        },
+        {
+            "timestamp": "2026-05-14 10:08:53",
+            "text": "The dream of American dream that we see all around us is just the beginning of a sensational future."
+        },
+        {
+            "timestamp": "2026-05-14 09:56:30",
+            "text": "So he there, do I know you from somewhere? Or is it patchy or to servant to hear it to my voice?  Well, I'm speaking, I don't know if I'm truly engaging you in thoughts or emotions, but I will try my best.  So I'm speaking, I don't know if I'm truly engaging you in thoughts or emotions, but I will try my best.  So I'm speaking, I don't know if I'm truly engaging you in thoughts or emotions, but I will try my best.  So I'm speaking, I don't know if I'm truly engaging you in thoughts or emotions.  Hello there."
+        },
+        {
+            "timestamp": "2026-05-14 09:45:09",
+            "text": "Alright, now you know my name, you know all my details, so here's the story begins.  The thing is the guy who was standing there for so long, but wasn't seeing anyone there, that's why coming.  So he looked up, and I hoped to find who was there, but didn't find anyone, so bad luck to him."
+        },
+        {
+            "timestamp": "2026-05-14 09:44:04",
+            "text": "Hey brother, do you know my name?  Can you spell it out for me?  So that everybody can listen to it"
+        }
+    ]
 }

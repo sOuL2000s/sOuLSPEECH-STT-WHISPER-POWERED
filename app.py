@@ -123,6 +123,7 @@ class SpeechWidget(ctk.CTk):
         # --- Variables & Config ---
         self.is_recording = False
         self.is_minimized = False
+        self.is_animating = False
         self.is_transcribing_live = False
         self.keyboard = keyboard.Controller()
         self.hotkey_listener = None
@@ -184,6 +185,7 @@ class SpeechWidget(ctk.CTk):
                     self.always_on_top = config.get('always_on_top', True)
                     self.appearance_mode = config.get('appearance_mode', "Dark")
                     self.accent_color_name = config.get('accent_color', AppConfig.DEFAULT_ACCENT)
+                    self.history = config.get('history', [])
             else:
                 raise FileNotFoundError
         except Exception:
@@ -200,6 +202,7 @@ class SpeechWidget(ctk.CTk):
             self.always_on_top = True
             self.appearance_mode = "Dark"
             self.accent_color_name = AppConfig.DEFAULT_ACCENT
+            self.history = []
 
         # Apply theme and resolve current accent colors
         preset = AppConfig.ACCENT_PRESETS.get(self.accent_color_name, AppConfig.ACCENT_PRESETS[AppConfig.DEFAULT_ACCENT])
@@ -224,7 +227,8 @@ class SpeechWidget(ctk.CTk):
             'window_opacity': self.window_opacity,
             'always_on_top': self.always_on_top,
             'appearance_mode': self.appearance_mode,
-            'accent_color': self.accent_color_name
+            'accent_color': self.accent_color_name,
+            'history': self.history
         }
         try:
             with open(self.config_file, 'w') as f:
@@ -246,8 +250,12 @@ class SpeechWidget(ctk.CTk):
         self.geometry(self.last_expanded_geo)
         self.configure(fg_color=AppConfig.PRIMARY_BG)
 
+        # Main Outer Container with rounded corners for expanded island look
+        outer_frame = ctk.CTkFrame(self, fg_color=AppConfig.PRIMARY_BG, corner_radius=20, border_width=1, border_color=AppConfig.BORDER_COLOR)
+        outer_frame.pack(expand=True, fill="both", padx=2, pady=2)
+
         # Custom Title Bar
-        title_bar = ctk.CTkFrame(self, fg_color=AppConfig.TITLE_BAR_BG, height=35, corner_radius=0)
+        title_bar = ctk.CTkFrame(outer_frame, fg_color=AppConfig.TITLE_BAR_BG, height=35, corner_radius=0)
         title_bar.pack(fill="x", side="top")
         
         title_label = ctk.CTkLabel(title_bar, text="sOuLSPEECH", font=(AppConfig.FONT_FAMILY, AppConfig.TITLE_FONT_SIZE, "bold"), text_color=self.accent_color)
@@ -261,12 +269,16 @@ class SpeechWidget(ctk.CTk):
                                      hover_color=AppConfig.SECONDARY_BG, corner_radius=0, command=self.open_settings)
         settings_btn.pack(side="right")
 
+        history_btn = ctk.CTkButton(title_bar, text="📜", width=35, height=35, fg_color="transparent", 
+                                    hover_color=AppConfig.SECONDARY_BG, corner_radius=0, command=self.open_history)
+        history_btn.pack(side="right")
+
         min_btn = ctk.CTkButton(title_bar, text="—", width=35, height=35, fg_color="transparent", 
                                 hover_color=AppConfig.SECONDARY_BG, corner_radius=0, command=self.toggle_minimize)
         min_btn.pack(side="right")
 
         # Main Content
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame = ctk.CTkFrame(outer_frame, fg_color="transparent")
         main_frame.pack(expand=True, fill="both", padx=15, pady=10)
 
         initial_status = "Ready to Listen" if self.model else "Checking Model Files..."
@@ -319,36 +331,40 @@ class SpeechWidget(ctk.CTk):
         clear_btn.pack(side="right", expand=True, fill="x")
 
     def setup_minimized_ui(self):
-        # Save current position before shrinking
-        self.last_expanded_geo = self.geometry()
+        # Pill shape for Dynamic Island UI
+        width, height = 200, 45
+        self.geometry(f"{width}x{height}")
         
-        # Make circular-ish small floating button
-        size = 60
-        self.geometry(f"{size}x{size}")
+        pill_frame = ctk.CTkFrame(self, fg_color=AppConfig.TITLE_BAR_BG, corner_radius=22, border_width=1, border_color=self.accent_color)
+        pill_frame.pack(expand=True, fill="both", padx=2, pady=2)
         
-        # Use icon if loaded, otherwise fallback to "S"
-        btn_kwargs = {
-            "fg_color": self.accent_color,
-            "hover_color": self.accent_hover,
-            "corner_radius": size // 2,
-            "width": size,
-            "height": size,
-            "border_width": 0,
-            "command": self.toggle_minimize
-        }
+        # Indicator on left
+        status_color = AppConfig.RECORD_BTN_COLOR if self.is_recording else self.accent_color
+        self.island_icon = ctk.CTkLabel(pill_frame, text="●" if self.is_recording else "S", 
+                                        font=(AppConfig.FONT_FAMILY, 18, "bold"), 
+                                        text_color=status_color, width=40)
+        self.island_icon.pack(side="left", padx=(10, 5))
         
-        if self.mic_icon:
-            # Force empty text and center the image
-            self.icon_label = ctk.CTkButton(self, text="", image=self.mic_icon, compound="center", **btn_kwargs)
-        else:
-            self.icon_label = ctk.CTkButton(self, text="S", font=(AppConfig.FONT_FAMILY, 24, "bold"), **btn_kwargs)
-            
-        self.icon_label.pack(expand=True, fill="both")
+        # Status Text in middle
+        display_text = "Recording..." if self.is_recording else "sOuLSPEECH"
+        self.island_label = ctk.CTkLabel(pill_frame, text=display_text, 
+                                         font=(AppConfig.FONT_FAMILY, 12, "bold"), 
+                                         text_color="white")
+        self.island_label.pack(side="left", expand=True)
 
-        # Context Menu & Hover bindings
-        self.icon_label.bind("<Button-3>", self.show_context_menu)
-        self.icon_label.bind("<Enter>", self.show_tooltip)
-        self.icon_label.bind("<Leave>", self.hide_tooltip)
+        # Expand button on right
+        expand_btn = ctk.CTkButton(pill_frame, text="↗", width=30, height=30, 
+                                   fg_color="transparent", hover_color=AppConfig.SECONDARY_BG,
+                                   corner_radius=15, command=self.toggle_minimize)
+        expand_btn.pack(side="right", padx=5)
+
+        # Bindings for the pill frame to allow dragging and interaction
+        for widget in [pill_frame, self.island_icon, self.island_label]:
+            widget.bind("<Button-1>", self.start_move)
+            widget.bind("<B1-Motion>", self.do_move)
+            widget.bind("<Button-3>", self.show_context_menu)
+            widget.bind("<Enter>", self.show_tooltip)
+            widget.bind("<Leave>", self.hide_tooltip)
 
     def show_tooltip(self, event=None):
         if self.tooltip_window or not self.is_minimized:
@@ -393,10 +409,56 @@ class SpeechWidget(ctk.CTk):
             menu.grab_release()
 
     def toggle_minimize(self):
+        if self.is_animating:
+            return
+        
         self.hide_tooltip()
-        self.is_minimized = not self.is_minimized
-        self.setup_ui()
-        self.setup_bindings()
+        self.is_animating = True
+        
+        # Determine target dimensions for smooth transition
+        if not self.is_minimized:
+            # Shrinking to Pill
+            self.last_expanded_geo = self.geometry()
+            target_w, target_h = 200, 45
+        else:
+            # Expanding to Window
+            parts = self.last_expanded_geo.split('+')
+            size_part = parts[0].split('x')
+            target_w, target_h = int(size_part[0]), int(size_part[1])
+
+        self.animate_transition(target_w, target_h)
+
+    def animate_transition(self, target_w, target_h, steps=12):
+        # Current geometry components
+        parts = self.geometry().split('+')
+        curr_size = parts[0].split('x')
+        curr_w, curr_h = int(curr_size[0]), int(curr_size[1])
+        curr_x, curr_y = int(parts[1]), int(parts[2])
+
+        dw = (target_w - curr_w) / steps
+        dh = (target_h - curr_h) / steps
+        
+        def step(i):
+            if i <= steps:
+                new_w = int(curr_w + dw * i)
+                new_h = int(curr_h + dh * i)
+                # Keep transition centered relative to previous position
+                new_x = curr_x + (curr_w - new_w) // 2
+                new_y = curr_y + (curr_h - new_h) // 2
+                
+                self.geometry(f"{new_w}x{new_h}+{new_x}+{new_y}")
+                self.after(8, lambda: step(i + 1))
+            else:
+                self.is_minimized = not self.is_minimized
+                self.setup_ui()
+                self.setup_bindings()
+                self.is_animating = False
+
+        # Clear existing widgets during animation to prevent layout thrashing
+        for widget in self.winfo_children():
+            widget.destroy()
+        
+        step(1)
 
     def setup_bindings(self):
         self.bind("<ButtonPress-1>", self.start_move)
@@ -517,17 +579,23 @@ class SpeechWidget(ctk.CTk):
             return
         if not self.is_recording:
             self.is_recording = True
-            self.record_btn.configure(text="⏹ STOP", fg_color=AppConfig.STOP_BTN_COLOR)
-            self.status_label.configure(text="Recording...", text_color=AppConfig.ERROR_COLOR)
-            self.progress_bar.set(0)
-            self.progress_bar.configure(mode="indeterminate")
-            self.progress_bar.start()
+            if not self.is_minimized:
+                self.record_btn.configure(text="⏹ STOP", fg_color=AppConfig.STOP_BTN_COLOR)
+                self.status_label.configure(text="Recording...", text_color=AppConfig.ERROR_COLOR)
+                self.progress_bar.set(0)
+                self.progress_bar.configure(mode="indeterminate")
+                self.progress_bar.start()
+            else:
+                self.setup_ui() # Refresh Dynamic Island UI
             threading.Thread(target=self.record_audio).start()
         else:
             self.is_recording = False
-            self.record_btn.configure(text="⏳ PROCESSING...", state="disabled")
-            self.progress_bar.stop()
-            self.progress_bar.configure(mode="determinate")
+            if not self.is_minimized:
+                self.record_btn.configure(text="⏳ PROCESSING...", state="disabled")
+                self.progress_bar.stop()
+                self.progress_bar.configure(mode="determinate")
+            else:
+                self.setup_ui()
             self.update_level_bar(0)
 
     def record_audio(self):
@@ -684,8 +752,11 @@ class SpeechWidget(ctk.CTk):
                     pass
         
     def update_progress(self, val):
-        self.progress_bar.set(val)
-        self.status_label.configure(text=f"Transcribing... {int(val*100)}%")
+        if not self.is_minimized:
+            self.progress_bar.set(val)
+            self.status_label.configure(text=f"Transcribing... {int(val*100)}%")
+        elif hasattr(self, 'island_label'):
+            self.island_label.configure(text=f"Progress: {int(val*100)}%")
 
     def update_level_bar(self, level):
         if not self.is_minimized and hasattr(self, 'level_indicator'):
@@ -695,14 +766,26 @@ class SpeechWidget(ctk.CTk):
                 pass
 
     def update_text_area(self, text):
-        self.text_area.delete("1.0", "end")
-        self.text_area.insert("1.0", text)
-        self.text_area.see("end")
+        if not self.is_minimized:
+            self.text_area.delete("1.0", "end")
+            self.text_area.insert("1.0", text)
+            self.text_area.see("end")
+        elif hasattr(self, 'island_label'):
+            snippet = text.strip()
+            if len(snippet) > 18: snippet = snippet[:15] + "..."
+            self.island_label.configure(text=snippet)
 
     def finalize_transcription(self, text):
         self._reset_record_button()
         self.status_label.configure(text="Transcription Complete! Copy or Clear.", text_color=AppConfig.SUCCESS_COLOR)
         
+        # Add to history
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.history.insert(0, {"timestamp": timestamp, "text": text})
+        if len(self.history) > 50: # Limit history size
+            self.history = self.history[:50]
+        self.save_config()
+
         # Smoothly complete the bar and reset after a delay
         self.progress_bar.set(1.0)
         self.after(2500, lambda: self.progress_bar.set(0) if not self.is_recording else None)
@@ -716,7 +799,10 @@ class SpeechWidget(ctk.CTk):
             threading.Thread(target=self.type_out, args=(text,), daemon=True).start()
 
     def _reset_record_button(self):
-        self.record_btn.configure(text="⏺ RECORD", state="normal", fg_color=AppConfig.RECORD_BTN_COLOR)
+        if not self.is_minimized:
+            self.record_btn.configure(text="⏺ RECORD", state="normal", fg_color=AppConfig.RECORD_BTN_COLOR)
+        else:
+            self.setup_ui()
         self.update_level_bar(0)
 
     def get_audio_input_devices(self):
@@ -977,6 +1063,73 @@ class SpeechWidget(ctk.CTk):
         file_path = filedialog.askopenfilename(filetypes=[("Audio Files", "*.mp3 *.wav *.m4a")])
         if file_path:
             threading.Thread(target=self.process_audio, args=(file_path,)).start()
+
+    def open_history(self):
+        history_win = ctk.CTkToplevel(self)
+        history_win.title("Transcription History")
+        history_win.geometry("400x500")
+        history_win.attributes("-topmost", True)
+        history_win.configure(fg_color=AppConfig.PRIMARY_BG)
+
+        header = ctk.CTkFrame(history_win, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=10)
+        
+        ctk.CTkLabel(header, text="Transcription History", font=(AppConfig.FONT_FAMILY, 16, "bold")).pack(side="left")
+        
+        def clear_all_history():
+            self.history = []
+            self.save_config()
+            refresh_history()
+
+        clear_btn = ctk.CTkButton(header, text="Clear All", width=80, fg_color=AppConfig.STOP_BTN_COLOR, 
+                                  hover_color=AppConfig.STOP_BTN_HOVER, command=clear_all_history)
+        clear_btn.pack(side="right")
+
+        scroll_frame = ctk.CTkScrollableFrame(history_win, fg_color="transparent")
+        scroll_frame.pack(expand=True, fill="both", padx=10, pady=(0, 10))
+
+        def refresh_history():
+            for widget in scroll_frame.winfo_children():
+                widget.destroy()
+            
+            if not self.history:
+                ctk.CTkLabel(scroll_frame, text="No history yet.", text_color=AppConfig.TEXT_COLOR_SECONDARY).pack(pady=20)
+                return
+
+            for idx, item in enumerate(self.history):
+                item_frame = ctk.CTkFrame(scroll_frame, fg_color=AppConfig.TEXT_AREA_BG, border_width=1, border_color=AppConfig.BORDER_COLOR)
+                item_frame.pack(fill="x", pady=5, padx=2)
+                
+                top_row = ctk.CTkFrame(item_frame, fg_color="transparent")
+                top_row.pack(fill="x", padx=5, pady=2)
+                
+                ctk.CTkLabel(top_row, text=item['timestamp'], font=(AppConfig.FONT_FAMILY, 10), text_color=self.accent_color).pack(side="left")
+                
+                def delete_item(i=idx):
+                    self.history.pop(i)
+                    self.save_config()
+                    refresh_history()
+                
+                def copy_item(t=item['text']):
+                    self.clipboard_clear()
+                    self.clipboard_append(t)
+                    self.status_label.configure(text="Copied to clipboard!", text_color=AppConfig.SUCCESS_COLOR)
+                
+                del_btn = ctk.CTkButton(top_row, text="🗑", width=25, height=25, fg_color="transparent", 
+                                       text_color=AppConfig.STOP_BTN_COLOR, hover_color=AppConfig.PROGRESS_BG,
+                                       command=delete_item)
+                del_btn.pack(side="right")
+                
+                cp_btn = ctk.CTkButton(top_row, text="📋", width=25, height=25, fg_color="transparent", 
+                                      text_color=self.accent_color, hover_color=AppConfig.PROGRESS_BG,
+                                      command=copy_item)
+                cp_btn.pack(side="right")
+
+                txt = ctk.CTkLabel(item_frame, text=item['text'], font=(AppConfig.FONT_FAMILY, 11), 
+                                   wraplength=340, justify="left")
+                txt.pack(fill="x", padx=10, pady=(0, 5))
+
+        refresh_history()
 
     def type_out(self, text):
         if not text: return
